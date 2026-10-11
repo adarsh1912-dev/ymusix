@@ -20,6 +20,7 @@ import { PlayerBar } from '../ui/components/PlayerBar.jsx';
 import { HomeView } from '../ui/views/HomeView.jsx';
 import { LibraryTabs, LIBRARY_TABS, groupAlbums, groupArtists } from '../ui/views/LibraryView.jsx';
 import { NowPlayingScreen } from '../ui/views/NowPlayingScreen.jsx';
+import { enterAltScreen, leaveAltScreen } from '../ui/screen.js';
 import {
   closeDatabase,
   entryKey,
@@ -317,7 +318,15 @@ export function App() {
     if (!downloaderRef.current) {
       const dl = new YouTubeDownloader();
       dl.on('progress', (p) =>
-        setDownload((d) => (d && d.id === p.id ? { ...d, ...p, status: 'active' } : d)),
+        // yt-dlp emits progress many times/sec; commit only when the
+        // displayed percent or ETA text actually changes.
+        setDownload((d) =>
+          d && d.id === p.id && Math.floor(d.pct ?? -1) === Math.floor(p.pct ?? -1) && d.eta === p.eta && d.speed === p.speed
+            ? d
+            : d && d.id === p.id
+              ? { ...d, ...p, status: 'active' }
+              : d,
+        ),
       );
       dl.on('done', (info) => {
         setDownload({ id: info.id, title: info.title, status: 'done' });
@@ -564,6 +573,7 @@ export function App() {
   // Graceful shutdown: stop downloads, stop mpv, remove socket, exit.
   // Idempotent; safe from exit/signal handlers.
   useEffect(() => {
+    enterAltScreen();
     let quitting = false;
     const shutdown = async () => {
       if (quitting) return;
@@ -578,6 +588,7 @@ export function App() {
       } catch {
         // ignore
       }
+      leaveAltScreen();
       exit();
       setTimeout(() => process.exit(0), 50).unref?.();
     };
@@ -587,6 +598,7 @@ export function App() {
     // Node process dies instantly and mpv is orphaned with a stale socket.
     process.once('SIGHUP', () => void shutdown());
     return () => {
+      leaveAltScreen();
       void downloaderRef.current?.quit();
       void playerRef.current?.quit();
     };
@@ -783,6 +795,7 @@ export function App() {
         } catch {
           // ignore
         }
+        leaveAltScreen();
         exit();
         setTimeout(() => process.exit(0), 50).unref?.();
       })();
