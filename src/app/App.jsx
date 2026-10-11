@@ -195,7 +195,15 @@ export function App() {
         if (reason === 'stop' || reason === 'quit' || reason === 'redirect') return;
         if (reason === 'error') {
           const cur = currentYtRef.current ?? songsRef.current[currentRef.current];
-          flashNotice(`Couldn't play ${cur?.title ?? 'that track'}, skipping…`);
+          // "skipping" only when something will actually play next: a queued
+          // track, or (for local) the library order. A YouTube failure with
+          // an empty queue stops instead — playYtTrack already shows why.
+          const willAdvance =
+            queueRef.current.length > 0 ||
+            (!currentYtRef.current && currentRef.current >= 0);
+          if (willAdvance) {
+            flashNotice(`Couldn't play ${cur?.title ?? 'that track'}, skipping…`);
+          }
         }
         void advanceAuto(reason);
       });
@@ -352,9 +360,12 @@ export function App() {
   // Automatic advance on natural end ('eof') or failure ('error').
   // Repeat ONE replays on 'eof' only — replaying on 'error' would loop a
   // broken file forever.
+  // A YouTube track never falls through to the local library below: with an
+  // empty explicit queue it replays (repeat) or stops, so a throttled or
+  // expired stream URL can never hijack playback into local songs.
   const advanceAuto = useCallback(async (reason = 'eof') => {
     const list = songsRef.current;
-    if (list.length === 0 && queueRef.current.length === 0) return;
+    if (list.length === 0 && queueRef.current.length === 0 && !currentYtRef.current) return;
     if (
       repeatRef.current === 'one' &&
       reason !== 'error' &&
@@ -364,6 +375,34 @@ export function App() {
         await playYtTrack(currentYtRef.current);
       } else {
         await playIndex(currentRef.current);
+      }
+      return;
+    }
+    // YouTube context: drain the explicit queue, then replay or stop.
+    if (currentYtRef.current && currentRef.current < 0) {
+      const q = [...queueRef.current];
+      while (q.length > 0) {
+        const next = q.shift();
+        setQueueTracks(q);
+        if (next.source === 'youtube') {
+          await playYtTrack(next);
+          return;
+        }
+        const idx = indexOfPath(list, next.path);
+        if (idx >= 0) {
+          await playIndex(idx);
+          return;
+        }
+      }
+      if (reason === 'error' || repeatRef.current === 'off') {
+        if (reason === 'error') {
+          flashNotice(
+            `YouTube stream failed (${currentYtRef.current?.title ?? 'that video'}) — stopped.`,
+          );
+        }
+        setIsPlaying(false);
+      } else {
+        await playYtTrack(currentYtRef.current);
       }
       return;
     }
@@ -405,7 +444,7 @@ export function App() {
 
   const playNextManual = useCallback(async () => {
     const list = songsRef.current;
-    if (list.length === 0 && queueRef.current.length === 0) return;
+    if (list.length === 0 && queueRef.current.length === 0 && !currentYtRef.current) return;
     const q = [...queueRef.current];
     while (q.length > 0) {
       const next = q.shift();
@@ -420,6 +459,12 @@ export function App() {
         return;
       }
     }
+    // YouTube context with an empty queue: replay instead of jumping
+    // into the local library.
+    if (currentYtRef.current && currentRef.current < 0) {
+      await playYtTrack(currentYtRef.current);
+      return;
+    }
     const ord = orderRef.current;
     const pos = ord.indexOf(currentRef.current);
     if (pos < 0) {
@@ -431,13 +476,19 @@ export function App() {
 
   const playPrevManual = useCallback(async () => {
     const list = songsRef.current;
-    if (list.length === 0) return;
+    if (list.length === 0 && !currentYtRef.current) return;
     if (positionRef.current > 3) {
       try {
         await getPlayer().seekTo(0);
       } catch {
         // ignore
       }
+      return;
+    }
+    // YouTube context with an empty queue: replay instead of jumping
+    // into the local library.
+    if (currentYtRef.current && currentRef.current < 0) {
+      await playYtTrack(currentYtRef.current);
       return;
     }
     const ord = orderRef.current;
@@ -448,7 +499,7 @@ export function App() {
     }
     const prev = pos - 1;
     await playIndex(prev < 0 ? (repeatRef.current === 'all' ? ord[ord.length - 1] : ord[0]) : ord[prev]);
-  }, [playIndex]);
+  }, [playIndex, playYtTrack]);
 
   const toggle = useCallback(async () => {
     try {

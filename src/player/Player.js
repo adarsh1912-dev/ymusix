@@ -211,8 +211,7 @@ export class Player extends EventEmitter {
       this.emit('resolving', source);
       target = await resolveStreamUrl(source);
       this.currentTrack = source;
-    this.currentPath = null;
-    this.currentTrack = null;
+      this.currentPath = null;
     } else {
       target = typeof source === 'string' ? source : source.path;
       this.currentPath = target;
