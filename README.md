@@ -173,6 +173,22 @@ Keep UI free of process/network logic (services live in `src/online/`,
 `src/downloader/`, `src/player/`), spawn with argv arrays only, and verify
 each feature in a real terminal before calling it done.
 
+## 🎬 Cinematic UI (CLI-first)
+
+- Design tokens live in `src/ui/theme.js` (palette `#08070D #171026 #7C3AED
+  #FF4FA3 #FF8CCB #4DA6FF`, text `#FFFFFF #C9C4D6 #777185`).
+- Layout: `Sidebar` + `TopBar` + view + persistent `PlayerBar`
+  (`src/ui/components/`). Views in `src/ui/views/` (Home, Library tabs,
+  Now Playing). Shared rows in `TrackRow.jsx`.
+- Album art: `src/ui/artwork.js` detects embedded pictures lazily and shows
+  a neon marker when present, `♫` otherwise. Text-only by design — no image
+  rendering.
+- New keys: `h` home · `v` now playing · `t` library tabs.
+  All playback/search/queue keys unchanged (`ymusix --help`).
+- Responsive: `<80` cols collapses sidebar + hides secondary info, `80–120`
+  normal, `>120` full sidebar + richer home. Lists clamp to terminal height
+  so the player bar never scrolls off.
+
 ## 📄 License
 
 MIT — see [LICENSE](LICENSE).

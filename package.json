@@ -1,7 +1,18 @@
 {
   "name": "ymusix",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A Spotify-inspired terminal music player - local-first, with optional YouTube",
+  "keywords": [
+    "music",
+    "player",
+    "terminal",
+    "cli",
+    "tui",
+    "mpv",
+    "youtube",
+    "ink",
+    "local-first"
+  ],
   "type": "module",
   "bin": {
     "ymusix": "./dist/cli.js"

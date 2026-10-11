@@ -1,5 +1,6 @@
 import { Box, Text, useStdout } from 'ink';
 import { formatTime } from '../utils/formatTime.js';
+import { COLORS } from '../ui/theme.js';
 
 export function ProgressBar({ position, duration }) {
   const { stdout } = useStdout();
@@ -9,12 +10,12 @@ export function ProgressBar({ position, duration }) {
   const frac = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0;
   const filled = Math.round(frac * barWidth);
   const bar =
-    '━'.repeat(filled) + (filled < barWidth ? '●' + '─'.repeat(barWidth - filled - 1) : '●');
+    '━'.repeat(filled) + (filled < barWidth ? '○' + '─'.repeat(barWidth - filled - 1) : '○');
 
   return (
     <Box flexDirection="column">
-      <Text>{bar}</Text>
-      <Text dimColor>
+      <Text color={COLORS.PINK}>{bar}</Text>
+      <Text color={COLORS.MUTED}>
         {formatTime(position)} / {formatTime(duration)}
       </Text>
     </Box>

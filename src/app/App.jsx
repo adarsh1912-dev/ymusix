@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Box, Text, useApp, useInput } from 'ink';
+import { Box, Text, useApp, useInput, useStdout } from 'ink';
 import { existsSync } from 'node:fs';
-import { Header } from '../components/Header.jsx';
 import { Footer } from '../components/Footer.jsx';
 import { SongList } from '../components/SongList.jsx';
-import { NowPlaying } from '../components/NowPlaying.jsx';
 import { SearchBar } from '../components/SearchBar.jsx';
 import { YouTubeResults } from '../components/YouTubeResults.jsx';
 import { DownloadProgress } from '../components/DownloadProgress.jsx';
@@ -15,6 +13,13 @@ import { Player } from '../player/Player.js';
 import { filterSongs, buildShuffleOrder, indexOfPath, trackKey } from '../queue/queue.js';
 import { searchYouTube } from '../online/YouTubeSearch.js';
 import { YouTubeDownloader } from '../downloader/YouTubeDownloader.js';
+import { COLORS, layoutMode } from '../ui/theme.js';
+import { Sidebar } from '../ui/components/Sidebar.jsx';
+import { TopBar } from '../ui/components/TopBar.jsx';
+import { PlayerBar } from '../ui/components/PlayerBar.jsx';
+import { HomeView } from '../ui/views/HomeView.jsx';
+import { LibraryTabs, LIBRARY_TABS, groupAlbums, groupArtists } from '../ui/views/LibraryView.jsx';
+import { NowPlayingScreen } from '../ui/views/NowPlayingScreen.jsx';
 import {
   closeDatabase,
   entryKey,
@@ -54,7 +59,8 @@ export function App() {
   const [shuffle, setShuffle] = useState(false);
   const [shuffleOrder, setShuffleOrder] = useState([]);
   const [repeatMode, setRepeatMode] = useState('off');
-  const [view, setView] = useState('library'); // library | queue | favorites | recent
+  const [view, setView] = useState('home'); // home | library | queue | favorites | recent | now
+  const [libraryTab, setLibraryTab] = useState('Songs');
   const [searchActive, setSearchActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchSource, setSearchSource] = useState('local'); // local | youtube
@@ -472,7 +478,10 @@ export function App() {
     setRepeatMode((m) => (m === 'off' ? 'all' : m === 'all' ? 'one' : 'off'));
   }, []);
 
-  // Progress polling: ~2 updates/sec.
+  // Progress polling: 2 IPC reads/sec, but React only commits when the
+  // displayed second or duration actually changed. Paused/stopped playback
+  // therefore produces ZERO re-renders (no scrollback spam, no flicker);
+  // playing playback commits ~1/sec instead of 2/sec.
   useEffect(() => {
     if (currentIndex < 0 && !currentYt) {
       setPosition(0);
@@ -486,8 +495,8 @@ export function App() {
         if (!player) return;
         const [t, d] = await Promise.all([player.getTime(), player.getDuration()]);
         if (alive) {
-          setPosition(t);
-          setDuration(d);
+          setPosition((prev) => (Math.floor(prev) === Math.floor(t) ? prev : t));
+          setDuration((prev) => (prev === d ? prev : d));
         }
       } catch {
         // transient IPC failure; next tick retries
@@ -821,14 +830,19 @@ export function App() {
       return;
     }
 
-    if (key.escape && view !== 'library') {
-      switchView('library');
+    if (key.escape && view !== 'home') {
+      switchView('home');
       return;
     }
     if (key.return) {
       if (phase !== 'ready') return;
       if (view === 'queue') {
         void playQueueRow(selected);
+      } else if (view === 'home') {
+        const hero = recentList[0] ?? songs[0] ?? visible[0] ?? null;
+        if (hero) void playTrack(hero);
+      } else if (view === 'now') {
+        void toggle();
       } else if (activeList.length > 0) {
         const item = activeList[Math.min(selected, activeList.length - 1)];
         if (item.source === 'youtube') {
@@ -869,7 +883,6 @@ export function App() {
     // YouTube search immediately.
     const slashAt = chars.indexOf('/');
     if (slashAt >= 0) {
-      if (view !== 'library') switchView('library');
       setSearchActive(true);
       setSelected(0);
       const toYt = (input ?? '').includes('\t') || searchSource === 'youtube';
@@ -892,6 +905,13 @@ export function App() {
       for (const ch of chars) {
         if (ch === 'l') {
           switchView('library');
+        } else if (ch === 'h') {
+          switchView('home');
+        } else if (ch === 'v') {
+          switchView('now');
+        } else if (ch === 't' && view === 'library') {
+          setLibraryTab((t) => LIBRARY_TABS[(LIBRARY_TABS.indexOf(t) + 1) % LIBRARY_TABS.length]);
+          setSelected(0);
         } else if (ch === 'c') {
           // c opens the queue; pressing it again cycles queue → favorites → recent.
           setView((v) =>
@@ -964,8 +984,19 @@ export function App() {
   });
 
   const clampSel = (s) => {
+    const homeLen = Math.max(1, (recentList.length > 0 ? recentList : songs).slice(0, 5).length);
     const listLen =
-      view === 'queue' ? queueRowCount() : view === 'favorites' ? favList.length : view === 'recent' ? recentList.length : visible.length;
+      view === 'queue'
+        ? queueRowCount()
+        : view === 'favorites'
+          ? favList.length
+          : view === 'recent'
+            ? recentList.length
+            : view === 'home'
+              ? homeLen
+              : view === 'now'
+                ? 1
+                : visible.length;
     return listLen === 0 ? 0 : (s + listLen) % listLen;
   };
 
@@ -1025,34 +1056,33 @@ export function App() {
     }
   };
 
-  // Search overlay UI, shared by the library view (including an empty
-  // library) and the missing-directory state so search — especially
-  // YouTube search — always works.
+  // Search overlay UI, shared by every view (and the missing-directory
+  // state) so search — especially YouTube search — always works.
   const renderSearch = () => (
     <>
       {searchSource === 'local' && (
         <Box flexDirection="column">
           <SearchBar query={searchQuery} count={visible.length} />
-          <Text dimColor>Source: ❯ Local   YouTube (Tab to switch)</Text>
+          <Text color={COLORS.MUTED}>Source: ❯ Local   YouTube (Tab to switch)</Text>
           {songs.length === 0 && (
-            <Text dimColor>Library is empty — press Tab for YouTube.</Text>
+            <Text color={COLORS.MUTED}>Library is empty — press Tab for YouTube.</Text>
           )}
         </Box>
       )}
       {searchSource === 'youtube' && (
         <Box flexDirection="column">
           <Text>
-            Search:{' '}
-            <Text bold>{searchQuery}</Text>
+            <Text color={COLORS.PINK}>🔍 </Text>
+            <Text bold color={COLORS.TEXT}>{searchQuery}</Text>
             <Text inverse> </Text>
           </Text>
-          <Text dimColor>
+          <Text color={COLORS.MUTED}>
             Source:   Local   ❯ YouTube (Tab to switch · Enter to search · Esc close)
           </Text>
-          {ytLoading && <Text>⠋ Searching YouTube…</Text>}
-          {ytError !== '' && <Text color="red">✗ {ytError}</Text>}
+          {ytLoading && <Text color={COLORS.PINK_SOFT}>⠋ Searching YouTube…</Text>}
+          {ytError !== '' && <Text color={COLORS.RED}>✗ {ytError}</Text>}
           {!ytLoading && ytError === '' && ytResults.length === 0 && (
-            <Text dimColor>Type a query and press Enter to search YouTube.</Text>
+            <Text color={COLORS.MUTED}>Type a query and press Enter to search YouTube.</Text>
           )}
           {ytResults.length > 0 && (
             <YouTubeResults
@@ -1066,101 +1096,251 @@ export function App() {
   );
 
   const currentSong = currentIndex >= 0 ? songs[currentIndex] : null;
-  // What Now Playing shows: the YouTube track wins while streaming; local
+  // What playback shows: the YouTube track wins while streaming; local
   // songs render with their artist, YouTube tracks with their channel.
-  const displaySong = currentYt
-    ? { title: currentYt.title, artist: currentYt.channel, duration: currentYt.duration }
-    : currentSong;
+  // Memoized so memoized views skip re-renders on progress ticks.
+  const displaySong = useMemo(
+    () =>
+      currentYt
+        ? { title: currentYt.title, artist: currentYt.channel, duration: currentYt.duration, path: null }
+        : currentSong,
+    [currentYt, currentSong],
+  );
   const displaySource = currentYt ? 'youtube' : currentSong ? 'local' : null;
+
+  const albums = groupAlbums(songs);
+  const artists = groupArtists(songs);
+
+  return (
+    <CinematicShell
+      view={view}
+      searchActive={searchActive}
+      songCount={songs.length}
+      phase={phase}
+      error={error}
+      songs={songs}
+      visible={visible}
+      selected={selected}
+      favorites={favKeys}
+      favList={favList}
+      recentList={recentList}
+      searchQuery={searchQuery}
+      searchSource={searchSource}
+      libraryTab={libraryTab}
+      albums={albums}
+      artists={artists}
+      displaySong={displaySong}
+      displaySource={displaySource}
+      queueRowCount={queueRowCount}
+      explicitTracks={explicitTracks}
+      upNext={upNext}
+      download={download}
+      resolving={resolving}
+      isPlaying={isPlaying}
+      position={position}
+      duration={duration}
+      volume={volume}
+      muted={muted}
+      shuffle={shuffle}
+      repeatMode={repeatMode}
+      playerError={playerError}
+      notice={notice}
+      renderSearch={renderSearch}
+    />
+  );
+}
+
+function CinematicShell(props) {
+  const { stdout } = useStdout();
+  const columns = stdout?.columns ?? 80;
+  const termRows = stdout?.rows ?? 24;
+  const mode = layoutMode(columns);
+  const {
+    view, searchActive, songCount, phase, error, songs, visible,
+    selected, favorites, favList, recentList, searchQuery, searchSource,
+    libraryTab, albums, artists, displaySong, displaySource, queueRowCount,
+    explicitTracks, upNext, download, resolving, isPlaying, position,
+    duration, volume, muted, shuffle, repeatMode, playerError, notice,
+    renderSearch,
+  } = props;
+
+  const mainView = () => {
+    if (phase === 'loading') return <Text color={COLORS.PINK_SOFT}>⠋ Scanning music library…</Text>;
+    if (phase === 'missing') {
+      return (
+        <Box flexDirection="column">
+          <Text color={COLORS.TEXT}>
+            No Music directory found at {musicDir()}. Create it and add audio files, then restart.
+          </Text>
+          {searchActive && renderSearch()}
+        </Box>
+      );
+    }
+    if (phase === 'error') return <Text color={COLORS.RED}>Failed to scan library: {error}</Text>;
+    // search overlay floats above every view
+    if (searchActive) {
+      return (
+        <Box flexDirection="column">
+          {renderSearch()}
+          {searchSource === 'local' && songs.length > 0 &&
+            (visible.length === 0 ? (
+              <Text color={COLORS.MUTED}>No matches for “{searchQuery}”.</Text>
+            ) : (
+              <SongList
+                songs={visible}
+                selected={Math.min(selected, visible.length - 1)}
+                favorites={favorites}
+              />
+            ))}
+        </Box>
+      );
+    }
+    if (view === 'home') {
+      return (
+        <HomeView
+          songs={songs}
+          recentList={recentList}
+          favList={favList}
+          selected={Math.min(selected, Math.max(0, Math.min(4, (recentList.length > 0 ? recentList : songs).length - 1)))}
+          favorites={favorites}
+          maxRows={termRows}
+        />
+      );
+    }
+    if (view === 'now') {
+      return (
+        <NowPlayingScreen
+          song={displaySong}
+          source={displaySource}
+          isPlaying={isPlaying}
+          position={position}
+          duration={duration}
+          volume={volume}
+          muted={muted}
+          shuffle={shuffle}
+          repeatMode={repeatMode}
+        />
+      );
+    }
+    if (view === 'library') {
+      return (
+        <Box flexDirection="column">
+          <LibraryTabs active={libraryTab} />
+          <Text color={COLORS.MUTED}>
+            {songs.length} songs · t cycles tabs · / search · Enter play
+          </Text>
+          {songs.length === 0 ? (
+            <Text color={COLORS.TEXT}>
+              No supported audio files in {musicDir()}. Supported: .mp3 .flac .wav .ogg
+              .m4a .aac — press / to search YouTube.
+            </Text>
+          ) : libraryTab === 'Songs' ? (
+            <SongList
+              songs={songs}
+              selected={Math.min(selected, songs.length - 1)}
+              favorites={favorites}
+            />
+          ) : libraryTab === 'Albums' ? (
+            <Box flexDirection="column">
+              {albums.slice(0, 10).map((a, i) => (
+                <Text key={a.name} color={i === selected % Math.max(1, albums.length) ? COLORS.PINK_SOFT : COLORS.TEXT} bold={i === selected % Math.max(1, albums.length)}>
+                  {(i === selected % Math.max(1, albums.length) ? '❯ ' : '  ')}◉ {a.name} — {a.artist} · {a.songs.length} songs
+                </Text>
+              ))}
+            </Box>
+          ) : libraryTab === 'Artists' ? (
+            <Box flexDirection="column">
+              {artists.slice(0, 10).map((a, i) => (
+                <Text key={a.name} color={i === selected % Math.max(1, artists.length) ? COLORS.PINK_SOFT : COLORS.TEXT} bold={i === selected % Math.max(1, artists.length)}>
+                  {(i === selected % Math.max(1, artists.length) ? '❯ ' : '  ')}◉ {a.name} · {a.songs.length} songs
+                </Text>
+              ))}
+            </Box>
+          ) : (
+            <Box>
+              <Box borderStyle="round" borderColor={COLORS.BORDER} paddingX={1} marginRight={1} flexDirection="column">
+                <Text color={COLORS.PINK_SOFT}>◉</Text>
+                <Text bold color={COLORS.TEXT}>Liked</Text>
+                <Text color={COLORS.MUTED}>{favList.length} songs</Text>
+              </Box>
+              <Box borderStyle="round" borderColor={COLORS.BORDER} paddingX={1} marginRight={1} flexDirection="column">
+                <Text color={COLORS.PINK_SOFT}>◉</Text>
+                <Text bold color={COLORS.TEXT}>Recent</Text>
+                <Text color={COLORS.MUTED}>{recentList.length} plays</Text>
+              </Box>
+              <Box borderStyle="round" borderColor={COLORS.PINK} paddingX={1} flexDirection="column">
+                <Text color={COLORS.PINK_SOFT}>◉</Text>
+                <Text bold color={COLORS.TEXT}>All Songs</Text>
+                <Text color={COLORS.MUTED}>{songs.length} songs</Text>
+              </Box>
+            </Box>
+          )}
+        </Box>
+      );
+    }
+    if (view === 'queue') {
+      return (
+        <Box flexDirection="column">
+          <Text bold color={COLORS.TEXT}>QUEUE</Text>
+          <Text color={COLORS.MUTED}>Enter play · d remove · c more · Esc back</Text>
+          <QueueView
+            current={displaySong}
+            currentSource={displaySource}
+            explicit={explicitTracks}
+            upNext={upNext}
+            selected={Math.min(selected, Math.max(0, queueRowCount() - 1))}
+          />
+        </Box>
+      );
+    }
+    if (view === 'favorites') {
+      return (
+        <Box flexDirection="column">
+          <Text bold color={COLORS.TEXT}>LIKED <Text color={COLORS.PINK}>♥</Text></Text>
+          <Text color={COLORS.MUTED}>Enter play · f unfavorite · c more · Esc back</Text>
+          {favList.length === 0 ? (
+            <Text color={COLORS.MUTED}>No favorites yet — press f on a song to add it here.</Text>
+          ) : (
+            <SongList
+              songs={favList}
+              selected={Math.min(selected, favList.length - 1)}
+              favorites={favorites}
+            />
+          )}
+        </Box>
+      );
+    }
+    if (view === 'recent') {
+      return (
+        <Box flexDirection="column">
+          <Text bold color={COLORS.TEXT}>RECENTLY PLAYED</Text>
+          <Text color={COLORS.MUTED}>Enter play · c more · Esc back</Text>
+          {recentList.length === 0 ? (
+            <Text color={COLORS.MUTED}>Nothing played yet.</Text>
+          ) : (
+            <SongList
+              songs={recentList}
+              selected={Math.min(selected, recentList.length - 1)}
+              favorites={favorites}
+            />
+          )}
+        </Box>
+      );
+    }
+    return null;
+  };
 
   return (
     <Box flexDirection="column" width="100%" padding={1}>
-      <Header />
-      <Box paddingY={1} flexDirection="column">
-        {phase === 'loading' && <Text>⠋ Scanning music library...</Text>}
-        {phase === 'missing' && (
-          <Box flexDirection="column">
-            <Text>
-              No Music directory found at {musicDir()}. Create it and add audio files, then restart.
-            </Text>
-            {searchActive && renderSearch()}
-          </Box>
-        )}
-        {phase === 'error' && <Text color="red">Failed to scan library: {error}</Text>}
-        {phase === 'ready' && view === 'library' && (
-          <Box flexDirection="column">
-            <Text dimColor>LIBRARY — {songs.length} songs</Text>
-            {searchActive && renderSearch()}
-            {!searchActive &&
-              (songs.length === 0 ? (
-                <Text>
-                  No supported audio files in {musicDir()}. Supported: .mp3 .flac .wav .ogg
-                  .m4a .aac — press / to search YouTube.
-                </Text>
-              ) : (
-                <SongList
-                  songs={songs}
-                  selected={Math.min(selected, songs.length - 1)}
-                  favorites={favKeys}
-                />
-              ))}
-            {searchActive &&
-              searchSource === 'local' &&
-              songs.length > 0 &&
-              (visible.length === 0 ? (
-                <Text dimColor>No matches for “{searchQuery}”.</Text>
-              ) : (
-                <SongList
-                  songs={visible}
-                  selected={Math.min(selected, visible.length - 1)}
-                  favorites={favKeys}
-                />
-              ))}
-          </Box>
-        )}
-        {phase === 'ready' && view === 'queue' && (
-          <Box flexDirection="column">
-            <Text dimColor>QUEUE — Enter play · d remove · c more · Esc back</Text>
-            <QueueView
-              current={displaySong}
-              currentSource={displaySource}
-              explicit={explicitTracks}
-              upNext={upNext}
-              selected={Math.min(selected, Math.max(0, queueRowCount() - 1))}
-            />
-          </Box>
-        )}
-        {phase === 'ready' && view === 'favorites' && (
-          <Box flexDirection="column">
-            <Text dimColor>FAVORITES — Enter play · f unfavorite · c more · Esc back</Text>
-            {favList.length === 0 ? (
-              <Text dimColor>No favorites yet — press f on a song to add it here.</Text>
-            ) : (
-              <SongList
-                songs={favList}
-                selected={Math.min(selected, favList.length - 1)}
-                favorites={favKeys}
-              />
-            )}
-          </Box>
-        )}
-        {phase === 'ready' && view === 'recent' && (
-          <Box flexDirection="column">
-            <Text dimColor>RECENTLY PLAYED — Enter play · c more · Esc back</Text>
-            {recentList.length === 0 ? (
-              <Text dimColor>Nothing played yet.</Text>
-            ) : (
-              <SongList
-                songs={recentList}
-                selected={Math.min(selected, recentList.length - 1)}
-                favorites={favKeys}
-              />
-            )}
-          </Box>
-        )}
+      <TopBar view={view} songCount={songCount} searchActive={searchActive} compact={termRows < 27} />
+      <Box paddingY={1}>
+        {mode !== 'small' && <Sidebar view={view} columns={columns} searchActive={searchActive} />}
+        <Box flexDirection="column" flexGrow={1} paddingLeft={mode === 'small' ? 0 : 2}>
+          {mainView()}
+        </Box>
       </Box>
       <DownloadProgress download={download} />
-      <NowPlaying
+      <PlayerBar
         song={displaySong}
         source={displaySource}
         resolving={resolving}
@@ -1172,8 +1352,8 @@ export function App() {
         shuffle={shuffle}
         repeatMode={repeatMode}
       />
-      {playerError !== '' && <Text color="red">✗ {playerError}</Text>}
-      {playerError === '' && notice !== '' && <Text dimColor>{notice}</Text>}
+      {playerError !== '' && <Text color={COLORS.RED}>✗ {playerError}</Text>}
+      {playerError === '' && notice !== '' && <Text color={COLORS.MUTED}>{notice}</Text>}
       <Footer />
     </Box>
   );

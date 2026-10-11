@@ -6,6 +6,7 @@ import { unlink } from 'node:fs/promises';
 import { get } from 'node:https';
 import { checkMpv } from '../player/check.js';
 import { checkFfmpeg, checkYtDlp } from '../online/YouTubeService.js';
+import { isKitty, supportsKittyGraphics } from '../ui/kitty.js';
 import { dataDir, dbPath, musicDir } from '../utils/paths.js';
 
 function canWrite(dir) {
@@ -98,6 +99,18 @@ export async function runDoctor() {
   results.push({
     name: netOk ? 'Network connectivity (YouTube reachable)' : 'Network connectivity (YouTube unreachable — local playback unaffected)',
     ok: netOk,
+    optional: true,
+  });
+  // Kitty detection is informational: text UI works everywhere regardless.
+  const kitty = isKitty();
+  const gfx = supportsKittyGraphics();
+  results.push({
+    name: gfx
+      ? `Kitty terminal detected (TERM=${process.env.TERM ?? '?'})`
+      : kitty
+        ? 'Kitty detected but Kitty extras disabled (YMUSIX_NO_GRAPHICS=1?)'
+        : `Kitty not detected (TERM=${process.env.TERM ?? '?'}${process.env.KITTY_WINDOW_ID ? '' : ', no KITTY_WINDOW_ID'})`,
+    ok: gfx,
     optional: true,
   });
 

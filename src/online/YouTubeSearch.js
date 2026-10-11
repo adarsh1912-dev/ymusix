@@ -74,6 +74,8 @@ function normalizeEntry(entry) {
       (typeof entry.uploader === 'string' && entry.uploader) ||
       'Unknown channel',
     duration: Number.isFinite(duration) && duration >= 0 ? Math.round(duration) : 0,
+    // Opportunistic: flat search usually includes view_count. Null simply
+    // omits views in the UI — never blocks search.
     viewCount: Number.isFinite(Number(entry.view_count)) ? Number(entry.view_count) : null,
     url:
       typeof entry.webpage_url === 'string' && entry.webpage_url

@@ -13,7 +13,7 @@ Usage:
 
 Keys (in player):
   ↑/k, ↓/j    Move selection
-  Enter       Play selected song / stream YouTube result
+  Enter       Play selected song / stream YouTube result (home plays hero)
   Space       Play / pause
   ← / →       Seek backward / forward (5s)
   n / p       Next / previous song
@@ -26,9 +26,11 @@ Keys (in player):
   x           Cancel an active download
   f           Favorite / unfavorite (local songs and YouTube videos)
   /           Search — Tab switches Local / YouTube, Enter searches YouTube
-  l           Library view
+  h           Home (cinematic dashboard)
+  v           Now Playing (immersive)
+  l           Library view (t cycles Songs/Albums/Artists/Playlists)
   c           Cycle queue → favorites → recently played
-  Esc         Close search / back to library
+  Esc         Close search / back home
   q           Quit
 
 YouTube workflow: press /, Tab to YouTube, type a query, Enter to search,
