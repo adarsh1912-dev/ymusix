@@ -68,7 +68,7 @@ npm install -g ymusix
 Or from source:
 
 ```bash
-git clone <repo-url> && cd ymusix
+git clone https://github.com/adarsh1912-dev/ymusix.git && cd ymusix
 npm install
 npm run build
 npm install -g ./
