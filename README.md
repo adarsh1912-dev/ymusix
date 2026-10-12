@@ -10,6 +10,16 @@ No accounts, no telemetry, no servers — your data never leaves your machine.
 ![Node >= 22](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Platform: Linux](https://img.shields.io/badge/platform-linux-lightgrey)
+[![npm version](https://img.shields.io/npm/v/ymusix)](https://www.npmjs.com/package/ymusix)
+[![npm downloads](https://img.shields.io/npm/dm/ymusix)](https://www.npmjs.com/package/ymusix)
+
+> **Spotify in your terminal.** Ymusix is a Spotify-inspired TUI music player:
+> your local library plus YouTube Music-style search, streaming, and
+> downloads — with queue, shuffle, repeat, likes, and history, and no account.
+
+<!-- MAINTAINER: a real 20s recording (play → / search → Tab YouTube →
+     stream → d download) converts far better than the mockup below:
+     asciinema rec demo.cast, agg demo.cast demo.gif, commit demo.gif -->
 
 ```text
 ╭────────────────────────────────────────────────────────╮
@@ -27,6 +37,20 @@ No accounts, no telemetry, no servers — your data never leaves your machine.
 │  ↑↓ move · Enter play · Space pause · / search · q quit│
 ╰────────────────────────────────────────────────────────╯
 ```
+
+## 🆚 Why ymusix? (Spotify & terminal-player alternatives)
+
+| Player | Spotify-like UX | YouTube search/stream/download | Local files | Needs account/server |
+|---|---|---|---|---|
+| **ymusix** | ✅ | ✅ | ✅ | ❌ No |
+| spotify-tui / spotify_player | ✅ | ❌ | ❌ (Spotify only) | ✅ Spotify Premium |
+| cmus / ncmpcpp | ❌ | ❌ | ✅ | ❌ No |
+| mopidy + extensions | Partial | Partial | ✅ | Varies |
+| ytfzf | ❌ | ✅ play only | ❌ | ❌ No |
+
+Ymusix is for people who want **one terminal app for everything**: the local
+collection they own plus the endless YouTube catalog — no Premium, no daemon,
+no browser.
 
 ## ✨ Features
 
